@@ -14,21 +14,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Ganti dengan provider database Anda
+  url      = env("DATABASE_URL")
+}
+
 model Recipe {
-  id                  Int      @id @default(autoincrement())
-  recipeId            Int      @unique
+  id                  Int          @id @default(autoincrement())
+  recipeId            Int          @unique
   recipeCategory      String
   recipeName          String
   recipeImage         String
   prepTime            Float
   cookTime            Float
   recipeServing       Int
-  recipeIngredients   String[] // Array of strings untuk bahan-bahan
   recipeMethod        String
   recipeReview        Int
-  isPopular           Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
+  isPopular           Boolean      @default(false)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  ingredients         Ingredient[] // Relasi one-to-many ke ingredients
+  
   @@map("recipes")
+}
+
+model Ingredient {
+  id        Int    @id @default(autoincrement())
+  name      String
+  order     Int    // Untuk menjaga urutan bahan
+  recipeId  Int
+  recipe    Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  
+  @@map("ingredients")
 }
