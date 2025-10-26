@@ -13,3 +13,22 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
+
+model Recipe {
+  id                  Int      @id @default(autoincrement())
+  recipeId            Int      @unique
+  recipeCategory      String
+  recipeName          String
+  recipeImage         String
+  prepTime            Float
+  cookTime            Float
+  recipeServing       Int
+  recipeIngredients   String[] // Array of strings untuk bahan-bahan
+  recipeMethod        String
+  recipeReview        Int
+  isPopular           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("recipes")
+}
