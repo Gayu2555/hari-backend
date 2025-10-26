@@ -4,10 +4,6 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/prisma"
-}
 
 datasource db {
   provider = "mysql"
@@ -19,9 +15,52 @@ generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "sqlite" // Ganti dengan provider database Anda
-  url      = env("DATABASE_URL")
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  recipeId  Int
+  createdAt DateTime @default(now())
+  
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, recipeId])
+  @@map("favorites")
+}
+
+// Model untuk review/rating user
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int      // 1-5 stars
+  comment   String?
+  userId    Int
+  recipeId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, recipeId])
+  @@map("reviews")
+}
+
+// Model User
+model User {
+  id        Int      @id @default(autoincrement())
+  uuid      String   @unique @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relasi dengan model lainnya
+  favorites Favorite[]
+  reviews   Review[]
+  
+  @@map("users")
 }
 
 model Recipe {
@@ -38,7 +77,11 @@ model Recipe {
   isPopular           Boolean      @default(false)
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
-  ingredients         Ingredient[] // Relasi one-to-many ke ingredients
+  ingredients         Ingredient[]
+  
+  // Relasi dengan User melalui favorites dan reviews
+  favorites Favorite[]
+  reviews   Review[]
   
   @@map("recipes")
 }
@@ -46,7 +89,7 @@ model Recipe {
 model Ingredient {
   id        Int    @id @default(autoincrement())
   name      String
-  order     Int    // Untuk menjaga urutan bahan
+  order     Int
   recipeId  Int
   recipe    Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   
