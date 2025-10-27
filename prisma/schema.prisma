@@ -5,6 +5,7 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
+<<<<<<< HEAD
   provider = "prisma-client"
   output   = "../generated/prisma"
 }
@@ -13,3 +14,89 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+=======
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  uuid      String    @unique @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  avatar    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  favorites Favorite[]
+  reviews   Review[]
+
+  @@map("users")
+}
+
+model Recipe {
+  id              Int          @id @default(autoincrement())
+  recipeId        Int          @unique
+  recipeCategory  String
+  recipeName      String
+  recipeImage     String       @db.Text
+  prepTime        Float
+  cookTime        Float
+  recipeServing   Int
+  recipeMethod    String       @db.Text
+  recipeReview    Int
+  isPopular       Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  ingredients Ingredient[]
+  favorites   Favorite[]
+  reviews     Review[]
+
+  @@map("recipes")
+}
+
+model Ingredient {
+  id       Int    @id @default(autoincrement())
+  name     String
+  order    Int
+  recipeId Int
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@map("ingredients")
+}
+
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  recipeId  Int
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@map("favorites")
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int
+  comment   String?
+  userId    Int
+  recipeId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@map("reviews")
+}
+>>>>>>> 2d347ef (oalah nimpa kode cik wkkwk)
