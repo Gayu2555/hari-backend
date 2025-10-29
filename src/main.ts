@@ -1,17 +1,10 @@
-<<<<<<< HEAD
-import { NestFactory } from '@nestjs/core';
-=======
 // src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
->>>>>>> 2d347ef (oalah nimpa kode cik wkkwk)
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-<<<<<<< HEAD
-  await app.listen(process.env.PORT ?? 3000);
-=======
 
   app.enableCors({
     origin: [
@@ -34,6 +27,5 @@ async function bootstrap() {
   const port = process.env.PORT || 3850;
   await app.listen(port);
   console.log(`🚀 Recipe API running on: http://localhost:${port}`);
->>>>>>> 2d347ef (oalah nimpa kode cik wkkwk)
 }
 bootstrap();
