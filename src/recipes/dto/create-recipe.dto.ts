@@ -7,55 +7,83 @@ import {
   IsOptional,
   IsUrl,
   Min,
-  Max,
+  ValidateNested,
+  IsNotEmpty,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
-class CreateIngredientDto {
+// DTO untuk setiap bahan (ingredient)
+export class CreateIngredientDto {
   @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsNumber()
-  order: number;
+  @IsOptional()
+  quantity?: number;
+
+  @IsString()
+  @IsOptional()
+  unit?: string;
+}
+
+// DTO untuk setiap langkah memasak (step)
+export class CreateStepDto {
+  @IsNumber()
+  @Min(1)
+  stepNumber: number;
+
+  @IsString()
+  @IsNotEmpty()
+  description: string;
 }
 
 export class CreateRecipeDto {
-  @IsNumber()
-  recipeId: number;
+  @IsString()
+  @IsNotEmpty()
+  title: string;
 
   @IsString()
-  recipeCategory: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
-  recipeName: string;
-
-  @IsString()
+  @IsOptional()
   @IsUrl()
-  recipeImage: string;
+  image?: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
 
   @IsNumber()
   @Min(0)
-  prepTime: number;
+  @IsOptional()
+  prepTime?: number;
 
   @IsNumber()
   @Min(0)
-  cookTime: number;
+  @IsOptional()
+  cookTime?: number;
 
   @IsNumber()
   @Min(1)
-  recipeServing: number;
-
-  @IsString()
-  recipeMethod: string;
-
-  @IsNumber()
-  @Min(0)
-  recipeReview: number;
+  @IsOptional()
+  servings?: number;
 
   @IsBoolean()
   @IsOptional()
-  isPopular?: boolean;
+  isPublic?: boolean;
 
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateIngredientDto)
   @IsOptional()
   ingredients?: CreateIngredientDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateStepDto)
+  @IsOptional()
+  steps?: CreateStepDto[];
 }

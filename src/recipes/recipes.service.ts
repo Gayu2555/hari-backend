@@ -1,54 +1,167 @@
 // src/recipes/recipes.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateRecipeDto } from './dto/create-recipe.dto';
-import { UpdateRecipeDto } from './dto/update-recipe.dto';
+import { CreateRecipeDto, UpdateRecipeDto } from './dto';
+import { CreateIngredientDto, CreateStepDto } from './dto/create-recipe.dto'; // Impor tipe untuk kejelasan
 
 @Injectable()
 export class RecipesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createRecipeDto: CreateRecipeDto) {
-    const { ingredients, ...recipeData } = createRecipeDto;
+  /**
+   * Membuat resep baru untuk pengguna yang sedang login.
+   * @param userId - ID pengguna yang membuat resep.
+   * @param createRecipeDto - Data resep baru.
+   * @returns Resep yang baru dibuat beserta relasinya.
+   */
+  async create(userId: number, createRecipeDto: CreateRecipeDto) {
+    // Destrukturisasi data dari DTO untuk memisahkan data utama dan relasi
+    const { ingredients, steps, ...recipeData } = createRecipeDto;
 
     return this.prisma.recipe.create({
       data: {
-        ...recipeData,
+        ...recipeData, // Data utama resep (title, description, dll.)
+        userId, // Hubungkan resep dengan pengguna
         ingredients: {
-          create:
-            ingredients?.map((ingredient) => ({
-              name: ingredient.name,
-              order: ingredient.order,
-            })) || [],
+          // Buat entri ingredient baru yang terhubung ke resep ini
+          create: ingredients as CreateIngredientDto[],
+        },
+        steps: {
+          // Buat entri step baru yang terhubung ke resep ini
+          create: steps as CreateStepDto[],
         },
       },
       include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
+        // Sertakan data relasi pada hasil yang dikembalikan
+        ingredients: true,
+        steps: {
+          orderBy: { stepNumber: 'asc' }, // Urutkan langkah berdasarkan nomor
+        },
+        _count: {
+          select: {
+            favorites: true,
+            reviews: true,
+          },
         },
       },
     });
   }
 
-  async findAll() {
-    return this.prisma.recipe.findMany({
-      include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
+  /**
+   * Mendapatkan semua resep yang bersifat publik atau milik pengguna sendiri.
+   * Mendukung paginasi, filter kategori, dan pencarian.
+   * @param userId - ID pengguna yang sedang login.
+   * @param options - Opsi untuk filter, pencarian, dan paginasi.
+   * @returns Daftar resep dan metadata paginasi.
+   */
+  async findAll(
+    userId: number,
+    options?: {
+      category?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const { category, search, page = 1, limit = 10 } = options || {};
+    const skip = (page - 1) * limit;
+
+    const where = {
+      OR: [
+        { isPublic: true }, // Resep publik bisa dilihat siapa saja
+        { userId }, // Pengguna bisa melihat resepnya sendiri
+      ],
+      ...(category && { category }),
+
+      ...(search && {
+        OR: [
+          { title: { contains: search, mode: 'insensitive' as const } },
+          { description: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
+
+    // Jalankan query untuk mendapatkan data dan total hitungan secara paralel
+    const [recipes, total] = await Promise.all([
+      this.prisma.recipe.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          ingredients: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
+          },
+          _count: {
+            select: {
+              favorites: true,
+              reviews: true,
+            },
+          },
         },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.recipe.count({ where }),
+    ]);
+
+    return {
+      data: recipes,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-      orderBy: {
-        recipeId: 'asc',
-      },
-    });
+    };
   }
 
-  async findOne(id: number) {
+  /**
+   * Mendapatkan satu resep berdasarkan ID.
+   * Memeriksa apakah pengguna memiliki akses ke resep tersebut.
+   * @param id - ID resep yang akan dicari.
+   * @param userId - ID pengguna yang sedang login.
+   * @returns Data resep lengkap.
+   */
+  async findOne(id: number, userId: number) {
     const recipe = await this.prisma.recipe.findUnique({
       where: { id },
       include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
+        ingredients: true,
+        steps: {
+          orderBy: { stepNumber: 'asc' },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+          },
+        },
+        reviews: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        _count: {
+          select: {
+            favorites: true,
+            reviews: true,
+          },
         },
       },
     });
@@ -57,122 +170,234 @@ export class RecipesService {
       throw new NotFoundException(`Recipe with ID ${id} not found`);
     }
 
-    return recipe;
-  }
-
-  async findByRecipeId(recipeId: number) {
-    const recipe = await this.prisma.recipe.findUnique({
-      where: { recipeId },
-      include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
-        },
-      },
-    });
-
-    if (!recipe) {
-      throw new NotFoundException(`Recipe with recipeId ${recipeId} not found`);
+    // Cek akses: jika resep privat dan bukan milik user, tolak akses
+    if (!recipe.isPublic && recipe.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this recipe');
     }
 
     return recipe;
   }
 
-  async findByCategory(category: string) {
-    return this.prisma.recipe.findMany({
-      where: {
-        recipeCategory: {
-          contains: category,
-          // mode: 'insensitive', // <-- BARIS YANG DIHAPUS
-        },
-      },
-      include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
-        },
-      },
+  /**
+   * Memperbarui data resep.
+   * Hanya pemilik resep yang bisa memperbarui.
+   * @param id - ID resep yang akan diperbarui.
+   * @param userId - ID pengguna yang sedang login.
+   * @param updateRecipeDto - Data baru untuk resep.
+   * @returns Resep yang telah diperbarui.
+   */
+  async update(id: number, userId: number, updateRecipeDto: UpdateRecipeDto) {
+    // Cek apakah resep ada
+    const recipe = await this.prisma.recipe.findUnique({
+      where: { id },
     });
-  }
 
-  async findPopular() {
-    return this.prisma.recipe.findMany({
-      where: {
-        isPopular: true,
-      },
-      include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
-        },
-      },
-    });
-  }
+    if (!recipe) {
+      throw new NotFoundException(`Recipe with ID ${id} not found`);
+    }
 
-  async searchRecipes(searchText: string) {
-    return this.prisma.recipe.findMany({
-      where: {
-        OR: [
-          {
-            recipeName: {
-              contains: searchText,
-              // mode: 'insensitive', // <-- BARIS YANG DIHAPUS
-            },
-          },
-          {
-            recipeCategory: {
-              contains: searchText,
-              // mode: 'insensitive', // <-- BARIS YANG DIHAPUS
-            },
-          },
-        ],
-      },
-      include: {
-        ingredients: {
-          orderBy: { order: 'asc' },
-        },
-      },
-    });
-  }
+    // Cek kepemilikan
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException('You can only update your own recipes');
+    }
 
-  async update(id: number, updateRecipeDto: UpdateRecipeDto) {
-    const { ingredients, ...recipeData } = updateRecipeDto;
+    // Pisahkan data relasi dari data utama
+    const { ingredients, steps, ...recipeData } = updateRecipeDto;
 
-    await this.findOne(id);
+    // Jika ada data ingredients baru, hapus yang lama terlebih dahulu
+    if (ingredients) {
+      await this.prisma.ingredient.deleteMany({
+        where: { recipeId: id },
+      });
+    }
+
+    // Jika ada data steps baru, hapus yang lama terlebih dahulu
+    if (steps) {
+      await this.prisma.recipeStep.deleteMany({
+        where: { recipeId: id },
+      });
+    }
 
     return this.prisma.recipe.update({
       where: { id },
       data: {
-        ...recipeData,
+        ...recipeData, // Update data utama resep
+        // Buat ulang relasi ingredients jika ada
         ...(ingredients && {
           ingredients: {
-            deleteMany: {},
-            create: ingredients.map((ingredient) => ({
-              name: ingredient.name,
-              order: ingredient.order,
-            })),
+            create: ingredients as CreateIngredientDto[],
+          },
+        }),
+        // Buat ulang relasi steps jika ada
+        ...(steps && {
+          steps: {
+            create: steps as CreateStepDto[],
           },
         }),
       },
       include: {
         ingredients: true,
+        steps: {
+          orderBy: { stepNumber: 'asc' },
+        },
       },
     });
   }
 
-  async remove(id: number) {
-    await this.findOne(id);
+  /**
+   * Menghapus resep.
+   * Hanya pemilik resep yang bisa menghapus.
+   * @param id - ID resep yang akan dihapus.
+   * @param userId - ID pengguna yang sedang login.
+   * @returns Resep yang telah dihapus.
+   */
+  async remove(id: number, userId: number) {
+    const recipe = await this.prisma.recipe.findUnique({
+      where: { id },
+    });
+
+    if (!recipe) {
+      throw new NotFoundException(`Recipe with ID ${id} not found`);
+    }
+
+    // Cek kepemilikan
+    if (recipe.userId !== userId) {
+      throw new ForbiddenException('You can only delete your own recipes');
+    }
 
     return this.prisma.recipe.delete({
       where: { id },
     });
   }
 
-  async getCategories() {
-    const categories = await this.prisma.recipe.findMany({
-      select: {
-        recipeCategory: true,
+  /**
+   * Menambah atau menghapus resep dari daftar favorit pengguna.
+   * @param recipeId - ID resep.
+   * @param userId - ID pengguna.
+   * @returns Status favorit.
+   */
+  async toggleFavorite(recipeId: number, userId: number) {
+    // Pastikan resep ada dan pengguna memiliki akses
+    await this.findOne(recipeId, userId);
+
+    const existingFavorite = await this.prisma.favorite.findUnique({
+      where: {
+        userId_recipeId: {
+          userId,
+          recipeId,
+        },
       },
-      distinct: ['recipeCategory'],
     });
 
-    return categories.map((cat) => cat.recipeCategory);
+    if (existingFavorite) {
+      // Jika sudah favorit, hapus dari favorit
+      await this.prisma.favorite.delete({
+        where: { id: existingFavorite.id },
+      });
+      return { isFavorite: false, message: 'Removed from favorites' };
+    } else {
+      // Jika belum, tambahkan ke favorit
+      await this.prisma.favorite.create({
+        data: {
+          userId,
+          recipeId,
+        },
+      });
+      return { isFavorite: true, message: 'Added to favorites' };
+    }
+  }
+
+  /**
+   * Menambahkan ulasan baru atau memperbarui ulasan yang sudah ada.
+   * @param recipeId - ID resep.
+   * @param userId - ID pengguna.
+   * @param rating - Nilai rating.
+   * @param comment - Komentar ulasan.
+   * @returns Ulasan yang telah dibuat atau diperbarui.
+   */
+  async addReview(
+    recipeId: number,
+    userId: number,
+    rating: number,
+    comment?: string,
+  ) {
+    // Pastikan resep ada dan pengguna memiliki akses
+    await this.findOne(recipeId, userId);
+
+    const existingReview = await this.prisma.review.findUnique({
+      where: {
+        userId_recipeId: {
+          userId,
+          recipeId,
+        },
+      },
+    });
+
+    if (existingReview) {
+      // Jika ulasan sudah ada, perbarui
+      return this.prisma.review.update({
+        where: { id: existingReview.id },
+        data: { rating, comment },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+    } else {
+      // Jika belum, buat ulasan baru
+      return this.prisma.review.create({
+        data: {
+          userId,
+          recipeId,
+          rating,
+          comment,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  /**
+   * Menghapus ulasan.
+   * Hanya pemilik ulasan yang bisa menghapusnya.
+   * @param recipeId - ID resep.
+   * @param userId - ID pengguna.
+   * @returns Ulasan yang telah dihapus.
+   */
+  async deleteReview(recipeId: number, userId: number) {
+    const review = await this.prisma.review.findUnique({
+      where: {
+        userId_recipeId: {
+          userId,
+          recipeId,
+        },
+      },
+    });
+
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    // Cek kepemilikan ulasan
+    if (review.userId !== userId) {
+      throw new ForbiddenException('You can only delete your own reviews');
+    }
+
+    return this.prisma.review.delete({
+      where: { id: review.id },
+    });
   }
 }
