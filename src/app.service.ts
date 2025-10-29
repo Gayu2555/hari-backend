@@ -21,7 +21,7 @@ export class AppService {
       name: 'sharerecipe-api berfungsi',
       description: 'A REST API Backend untuk ShareRecipe Application',
       version: '1.0.0',
-      author: 'Your Name',
+      author: 'Gayu Yunma Ramadhan',
       endpoints: {
         auth: '/auth',
         users: '/users',
